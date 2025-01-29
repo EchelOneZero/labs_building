@@ -8,6 +8,13 @@ Vagrant.configure("2") do |config|
   config.vm.box = "generic/ubuntu2110"
   config.vm.hostname = "juice.sh"
 
+  config.vm.provider "hyperv" do |hv|
+    hv.vmname = "owasp_juice"
+    hv.memory = 1024
+    hv.cpus = 2
+    hv.enable_enhanced_session_mode = true
+  end
+
   config.ssh.forward_agent    = true
   config.ssh.insert_key       = false
   config.ssh.private_key_path = ["~/.vagrant.d/insecure_private_key", "~/.ssh/id_rsa"]
@@ -20,13 +27,6 @@ Vagrant.configure("2") do |config|
         sudo bash -c "echo #{ssh_pub_key} >> /root/.ssh/authorized_keys"
       SHELL
     end
-  end
-
-  config.vm.provider "hyperv" do |hv|
-    hv.vmname = "owasp_juice"
-    hv.memory = 1024
-    hv.cpus = 2
-    hv.enable_enhanced_session_mode = true
   end
 
   config.vm.provision :shell, privileged: true do |s|
@@ -45,8 +45,18 @@ Vagrant.configure("2") do |config|
     SHELL
   end
   
-
   # Provisionamento padrão
   config.vm.provision "file", source: "./default.conf", destination: "/tmp/juice-shop/default.conf"
   config.vm.provision :shell, path: "bootstrap.sh"
+
+  # Mensagem final com o IP
+  config.vm.provision :shell, privileged: false do |s|
+    s.inline = <<-SHELL
+      IP_ADDRESS=$(hostname -I | awk '{print $1}')
+      echo ""
+      echo "============================================================"
+      echo "A aplicação está disponível em: http://$IP_ADDRESS"
+      echo "============================================================"
+    SHELL
+  end
 end
