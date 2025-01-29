@@ -1,0 +1,62 @@
+# Copyright (c) 2014-2024 Bjoern Kimminich & the OWASP Juice Shop contributors.
+# SPDX-License-Identifier: MIT
+
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2110"
+  config.vm.hostname = "bwapp.sh"
+
+  config.vm.provider "hyperv" do |hv|
+    hv.vmname = "bwapp"
+    hv.memory = 1024
+    hv.cpus = 2
+    hv.enable_enhanced_session_mode = true
+  end
+
+  config.ssh.forward_agent    = true
+  config.ssh.insert_key       = false
+  config.ssh.private_key_path = ["~/.vagrant.d/insecure_private_key", "~/.ssh/id_rsa"]
+  ssh_key_path = "#{Dir.home}/.ssh/id_rsa.pub"
+  ssh_pub_key = File.exist?(ssh_key_path) ? File.readlines(ssh_key_path).first.strip : ""
+  unless ssh_pub_key.empty?
+    config.vm.provision :shell, privileged: false do |s|
+      s.inline = <<-SHELL
+        echo #{ssh_pub_key} >> /home/$USER/.ssh/authorized_keys
+        sudo bash -c "echo #{ssh_pub_key} >> /root/.ssh/authorized_keys"
+      SHELL
+    end
+  end
+
+  config.vm.provision :shell, privileged: true do |s|
+    s.inline = <<-SHELL
+      # Desativar o systemd-resolved para evitar sobrescrita do /etc/resolv.conf
+      sudo systemctl stop systemd-resolved
+      sudo systemctl disable systemd-resolved
+  
+      # Substituir o link simbólico por um arquivo real
+      sudo rm -f /etc/resolv.conf
+      sudo echo 'nameserver 192.168.136.2' | sudo tee /etc/resolv.conf > /dev/null
+      sudo echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf > /dev/null
+  
+      # Reiniciar o serviço de rede para aplicar as mudanças
+      sudo systemctl restart networking
+    SHELL
+  end
+  
+  # Provisionamento padrão
+  # config.vm.provision "file", source: "./default.conf", destination: "/tmp/bwapp/default.conf"
+  config.vm.provision :shell, path: "bootstrap.sh"
+
+  # Mensagem final com o IP
+  config.vm.provision :shell, privileged: false do |s|
+    s.inline = <<-SHELL
+      IP_ADDRESS=$(hostname -I | awk '{print $1}')
+      echo ""
+      echo "============================================================"
+      echo "A aplicação está disponível em: http://$IP_ADDRESS/install.php"
+      echo "============================================================"
+    SHELL
+  end
+end
