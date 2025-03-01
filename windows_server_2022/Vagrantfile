@@ -1,78 +1,128 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-# All Vagrant configuration is done below. The "2" in Vagrant.configure
-# configures the configuration version (we support older styles for
-# backwards compatibility). Please don't change it unless you know what
-# you're doing.
+# Configurações básicas
+VM_NAME = "windows-server-2022"
+VM_MEMORY = 4096
+VM_CPUS = 4
+ENABLE_GUI = true
+
 Vagrant.configure("2") do |config|
-  # The most common configuration options are documented and commented below.
-  # For a complete reference, please see the online documentation at
-  # https://docs.vagrantup.com.
+  # Box do Windows Server - versão sem especificar para usar a mais recente
+  config.vm.box = "gusztavvargadr/windows-server"
+  
+  # Configuração básica de comunicação
+  config.vm.communicator = "winrm"
+  config.vm.hostname = VM_NAME
+  
+  # Porta RDP para acesso à VM
+  config.vm.network "forwarded_port", guest: 3389, host: 33389, auto_correct: true
+  
+  # Timeouts
+  config.vm.boot_timeout = 1800
+  config.winrm.timeout = 1800
+  config.winrm.retry_limit = 30
+  config.winrm.retry_delay = 15
+  config.winrm.basic_auth_only = true
 
-  # Every Vagrant development environment requires a box. You can search for
-  # boxes at https://vagrantcloud.com/search.
-  config.vm.box = "gusztavvargadr/windows-server-2022-standard"
-  config.vm.box_version = "2102.0.2409"
+  # Desabilitando pasta compartilhada para maior estabilidade
+  config.vm.synced_folder '.', '/vagrant', disabled: true
 
-  # Disable automatic box update checking. If you disable this, then
-  # boxes will only be checked for updates when the user runs
-  # `vagrant box outdated`. This is not recommended.
-  # config.vm.box_check_update = false
+  # Configuração para VMware com rede em modo bridge
+  config.vm.provider "vmware_desktop" do |v|
+    v.vmx["memsize"] = VM_MEMORY.to_s
+    v.vmx["numvcpus"] = VM_CPUS.to_s
+    v.gui = ENABLE_GUI
+    v.vmx["displayName"] = VM_NAME
+    
+    # Configurando rede em modo bridge
+    v.vmx["ethernet0.connectionType"] = "bridged"
+    v.vmx["ethernet0.virtualDev"] = "e1000"
+    v.vmx["ethernet0.startConnected"] = "TRUE"
+    
+    # Desativar recursos desnecessários
+    v.vmx["mks.enable3d"] = "FALSE"
+    v.vmx["sound.present"] = "FALSE"
+    v.vmx["usb.present"] = "FALSE"
+    v.vmx["hgfs.linkRootShare"] = "FALSE"
+    
+    # Melhorar sincronização de tempo
+    v.vmx["tools.syncTime"] = "TRUE"
+    v.vmx["time.synchronize.continue"] = "TRUE"
+    v.vmx["time.synchronize.restore"] = "TRUE"
+  end
 
-  # Create a forwarded port mapping which allows access to a specific port
-  # within the machine from a port on the host machine. In the example below,
-  # accessing "localhost:8080" will access port 80 on the guest machine.
-  # NOTE: This will enable public access to the opened port
-  # config.vm.network "forwarded_port", guest: 80, host: 8080
+  # Configuração para Hyper-V
+  config.vm.provider "hyperv" do |h|
+    h.memory = VM_MEMORY
+    h.cpus = VM_CPUS
+    h.vmname = VM_NAME
+    h.vm_integration_services = {
+      guest_service_interface: true,
+      heartbeat: true,
+      key_value_pair_exchange: true,
+      shutdown: true,
+      time_synchronization: true,
+      vss: true
+    }
+    h.enable_virtualization_extensions = true
+    h.enable_enhanced_session_mode = true  # Suporte a sessões avançadas
+    h.linked_clone = true  # Economiza espaço em disco
+    h.maxmemory = VM_MEMORY
+  end
+  
+  # Não verificar atualizações da box
+  config.vm.box_check_update = false
 
-  # Create a forwarded port mapping which allows access to a specific port
-  # within the machine from a port on the host machine and only allow access
-  # via 127.0.0.1 to disable public access
-  # config.vm.network "forwarded_port", guest: 80, host: 8080, host_ip: "127.0.0.1"
-
-  # Create a private network, which allows host-only access to the machine
-  # using a specific IP.
-  # config.vm.network "private_network", ip: "192.168.33.10"
-
-  # Create a public network, which generally matched to bridged network.
-  # Bridged networks make the machine appear as another physical device on
-  # your network.
-  # config.vm.network "public_network"
-
-  # Share an additional folder to the guest VM. The first argument is
-  # the path on the host to the actual folder. The second argument is
-  # the path on the guest to mount the folder. And the optional third
-  # argument is a set of non-required options.
-  # config.vm.synced_folder "../data", "/vagrant_data"
-
-  # Disable the default share of the current code directory. Doing this
-  # provides improved isolation between the vagrant box and your host
-  # by making sure your Vagrantfile isn't accessible to the vagrant box.
-  # If you use this you may want to enable additional shared subfolders as
-  # shown above.
-  # config.vm.synced_folder ".", "/vagrant", disabled: true
-
-  # Provider-specific configuration so you can fine-tune various
-  # backing providers for Vagrant. These expose provider-specific options.
-  # Example for VirtualBox:
-  #
-  # config.vm.provider "virtualbox" do |vb|
-  #   # Display the VirtualBox GUI when booting the machine
-  #   vb.gui = true
-  #
-  #   # Customize the amount of memory on the VM:
-  #   vb.memory = "1024"
-  # end
-  #
-  # View the documentation for the provider you are using for more
-  # information on available options.
-
-  # Enable provisioning with a shell script. Additional provisioners such as
-  # Ansible, Chef, Docker, Puppet and Salt are also available. Please see the
-  # documentation for more information about their specific syntax and use.
-  # config.vm.provision "shell", inline: <<-SHELL
-  #   apt-get update
-  #   apt-get install -y apache2
-  # SHELL
+  # Script de provisionamento simplificado
+  config.vm.provision "shell", name: "configuracao-windows", inline: <<-SHELL
+    # Configurar codificação correta
+    chcp 65001 > $null
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    
+    Write-Host "=== Configurando Windows Server 2022 ==="
+    
+    # Estender período de avaliação
+    Write-Host "Estendendo o periodo de avaliacao..."
+    slmgr -rearm
+    
+    # Desativar Windows Update
+    Write-Host "Desativando Windows Update..."
+    If(!(Test-Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU")) {
+      New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" -Force | Out-Null
+    }
+    Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" -Name "NoAutoUpdate" -Value 1 -Type DWord -Force
+    
+    # Configurar DNS para o Google DNS
+    Write-Host "Configurando DNS para 8.8.8.8..."
+    $adapters = Get-NetAdapter | Where-Object {$_.Status -eq "Up"}
+    foreach ($adapter in $adapters) {
+      Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ServerAddresses "8.8.8.8","8.8.4.4"
+    }
+    
+    # Desativar Windows Defender
+    Write-Host "Configurando Windows Defender..."
+    Set-MpPreference -DisableRealtimeMonitoring $true -ExclusionPath "C:\\" -Force
+    
+    # Alta performance
+    Write-Host "Configurando modo de alta performance..."
+    powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+    
+    # Informações de rede
+    Write-Host "Informacoes de rede:"
+    ipconfig /all
+    
+    # Exibir todos os endereços IP da máquina
+    $ipAddresses = (Get-NetIPAddress | Where-Object {$_.AddressFamily -eq "IPv4" -and $_.PrefixOrigin -ne "WellKnown"}).IPAddress
+    Write-Host "Enderecos IP disponiveis:"
+    foreach ($ip in $ipAddresses) {
+      Write-Host "  $ip"
+    }
+    
+    Write-Host ""
+    Write-Host "========================================================="
+    Write-Host "Configuracao concluida! Execute 'vagrant reload' para aplicar todas as configuracoes."
+    Write-Host "RDP pode ser acessado usando um dos enderecos IP listados acima, porta 3389."
+    Write-Host "========================================================="
+  SHELL
 end
